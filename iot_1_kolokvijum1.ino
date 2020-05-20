@@ -6,7 +6,15 @@
 #define PESACI_DUGME 2
 bool stisnuoDugme = false;
 bool jeAktivanFlag = true;
-bool semaforZaVozila = true; // Kada ide prvih 10 sekundi za vozila.
+int blink = HIGH;
+unsigned long prevMillis;
+unsigned long intervalZeleno = 1000;
+unsigned long intervalZuto = 300;
+unsigned long intervalCrvenoVozila = 200;
+unsigned long intervalCrvenoPesaciDoZutogVozila = 100;
+short stanjeSemafor = 0;
+
+
 
 // Interrupt dugme pomocna funkcija,
 // da registruje zahtev pesaka nakon 10 sekundi zelenog za vozila.
@@ -24,62 +32,23 @@ void proveriStanje(){
     // setuj stanje na atkivan i inicijalizuj na pocetak semafor vozila.
     // Ugasi zuto svetlo nakon aktivacije sistema.
     if(stanje.startsWith("aktivan")){
-      	semaforZaVozila = true;
       	digitalWrite(VOZILA_ZUTO, LOW);
+      	digitalWrite(VOZILA_ZELENO, HIGH);
+    	digitalWrite(PESACI_CRVENO, HIGH);
       	jeAktivanFlag = true;
+      	blink = true;
+      	stanjeSemafor = 0;
+      	stisnuoDugme = false;
     } else {
-    	jeAktivanFlag = false;
+      	digitalWrite(VOZILA_ZELENO, LOW);
+        digitalWrite(VOZILA_CRVENO, LOW);
+        digitalWrite(PESACI_ZELENO, LOW);
+        digitalWrite(PESACI_CRVENO, LOW);
+      	digitalWrite(VOZILA_ZUTO, blink);
+      	jeAktivanFlag = false;
     }
+    prevMillis = millis();
   }
-}
-
-// Funkcija koja izvrsava sekvencu svetla za pesake.
-void opsluziPesake(){
-  digitalWrite(VOZILA_ZELENO, LOW);
-  digitalWrite(VOZILA_ZUTO, HIGH);
-  delay(3000);
-  proveriStanje();
-  if(!jeAktivanFlag) return;
-  digitalWrite(VOZILA_ZUTO, LOW);
-  digitalWrite(VOZILA_CRVENO, HIGH);
-  delay(2000);
-  proveriStanje();
-  if(!jeAktivanFlag) return;
-  digitalWrite(PESACI_CRVENO, LOW);
-  digitalWrite(PESACI_ZELENO, HIGH);
-  
-  // Proveravaj 10 puta nakon svake sekunde da li se deaktivirao sistem.
-  for(int i = 0; i < 10; i++){
-    delay(1000);
-    proveriStanje();
-  	if(!jeAktivanFlag) return;
-  }
-  digitalWrite(PESACI_ZELENO, LOW);
-  digitalWrite(PESACI_CRVENO, HIGH);
-  delay(1000);
-  proveriStanje();
-  if(!jeAktivanFlag) return;
-  digitalWrite(VOZILA_ZUTO, HIGH);
-  delay(3000);
-  proveriStanje();
-  if(!jeAktivanFlag) return;
-  digitalWrite(VOZILA_CRVENO, LOW);
-  digitalWrite(VOZILA_ZUTO, LOW);
-  digitalWrite(VOZILA_ZELENO, HIGH);
-  semaforZaVozila = true;
-  
-}
-
-// Ako je neaktivan sistem, samo zuto svetlo upali.
-void neaktivanSistem(){
-  digitalWrite(VOZILA_ZELENO, LOW);
-  digitalWrite(VOZILA_CRVENO, LOW);
-  digitalWrite(PESACI_ZELENO, LOW);
-  digitalWrite(PESACI_CRVENO, LOW);
-  digitalWrite(VOZILA_ZUTO, HIGH);
-  delay(1000);
-  digitalWrite(VOZILA_ZUTO, LOW);
-  delay(500);
 }
 
 void setup(){
@@ -91,6 +60,8 @@ void setup(){
   pinMode(PESACI_CRVENO, OUTPUT);
   pinMode(PESACI_ZELENO, OUTPUT);
   pinMode(PESACI_DUGME, INPUT);
+  digitalWrite(VOZILA_ZELENO, HIGH);
+  digitalWrite(PESACI_CRVENO, HIGH);
   
   // Prekidna rutina za pritisak pesaka
   attachInterrupt(digitalPinToInterrupt(PESACI_DUGME), pesakStisnuo, RISING);
@@ -99,31 +70,52 @@ void setup(){
 void loop(){
   proveriStanje();
   if(jeAktivanFlag){
-    
-    // Drzi deset sekundi samo ako se tek aktivirao semafor.
-    if(semaforZaVozila){
-    	digitalWrite(VOZILA_ZELENO, HIGH);
-    	digitalWrite(PESACI_CRVENO, HIGH);
-      
-      	// 10 sekundi za vozila je minimum.
-      	// Nakon svake sekunde proveri stanje sistema.
-        for(int i = 0; i < 10; i++){
-        	delay(1000);
-          	proveriStanje();
-  			if(!jeAktivanFlag) break;
-        }
-      	semaforZaVozila = false;
+    // Drzi miniumum deset sekundi zeleno za vozila.
+    // I onda proveri da li je stisnuto dugme za semafor.
+    bool aktiviratiSekvencuZaPesake = stisnuoDugme && stanjeSemafor == 0;
+    if(millis() - prevMillis >= intervalZeleno && aktiviratiSekvencuZaPesake){
+      	digitalWrite(VOZILA_ZELENO, LOW);
+  		digitalWrite(VOZILA_ZUTO, HIGH);
+      	stanjeSemafor = 1;
+      	prevMillis = millis();
     }
-    
-    // Ako je pesak stisnuo dugme pre ili nakon 10 sekundi,
-    // Opsluzi pesaka sa zelenim svetlom.
-    if(stisnuoDugme && jeAktivanFlag){
-      stisnuoDugme = false;
-      opsluziPesake();
+    // Ako je promenjeno stanje sa zelenog za vozila za pesake
+    if(stanjeSemafor != 0){
+      // Prosao je period za zuto za vozila, prebaci u stanje za crveno.
+      if(stanjeSemafor == 1 && millis() - prevMillis >= intervalZuto){
+      	stanjeSemafor = 2;
+        digitalWrite(VOZILA_ZUTO, LOW);
+  		digitalWrite(VOZILA_CRVENO, HIGH);
+        prevMillis = millis();
+      } else if (stanjeSemafor == 2 && millis() - prevMillis >= intervalCrvenoVozila){
+      	stanjeSemafor = 3;
+        digitalWrite(PESACI_CRVENO, LOW);
+  		digitalWrite(PESACI_ZELENO, HIGH);
+        prevMillis = millis();
+      } else if (stanjeSemafor == 3 && millis() - prevMillis >= intervalZeleno){
+      	stanjeSemafor = 4;
+        digitalWrite(PESACI_ZELENO, LOW);
+  		digitalWrite(PESACI_CRVENO, HIGH);
+        prevMillis = millis();
+      } else if (stanjeSemafor == 4 && millis() - prevMillis >= intervalCrvenoPesaciDoZutogVozila){
+      	stanjeSemafor = 5;
+        digitalWrite(VOZILA_ZUTO, HIGH);
+        prevMillis = millis();
+      } else if (stanjeSemafor == 5 && millis() - prevMillis >= intervalZuto){
+      	stanjeSemafor = 0; // Vrati na zeleno za vozila i crveno za pesake
+        digitalWrite(VOZILA_CRVENO, LOW);
+  		digitalWrite(VOZILA_ZUTO, LOW);
+  		digitalWrite(VOZILA_ZELENO, HIGH);
+        stisnuoDugme = false;
+        prevMillis = millis();
+      }
     }
-    
-  // Deaktiviraj sistem.
+  // Deaktiviran sistem i onda samo zuto svetlo blinka.
   } else {
-    neaktivanSistem();
+      if(millis() - prevMillis >= 500){
+          blink = !blink;
+          digitalWrite(VOZILA_ZUTO, blink);
+          prevMillis = millis();
+      }
   } 
 }
